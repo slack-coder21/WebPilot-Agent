@@ -1,0 +1,57 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "webpilot-agent"
+version = "0.1.0"
+description = "Browser automation agent for technical research workflows."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "beautifulsoup4>=4.12.3",
+  "click>=8.1.7",
+  "deep-translator>=1.11.4",
+  "fastapi>=0.115.0",
+  "lxml>=5.2.1",
+  "playwright>=1.44.0",
+  "pydantic>=2.7.1",
+  "python-dotenv>=1.0.1",
+  "pyyaml>=6.0.1",
+  "rich>=13.7.1",
+  "streamlit>=1.36.0",
+  "uvicorn[standard]>=0.30.0",
+]
+
+[project.optional-dependencies]
+agent = [
+  "langchain-openai>=0.1.8",
+  "langgraph>=0.0.60",
+]
+rag = [
+  "chromadb>=0.5.0",
+  "langchain>=0.2.0",
+  "langchain-chroma>=0.1.2",
+  "langchain-text-splitters>=0.2.0",
+]
+mcp = [
+  "mcp>=1.9.0",
+]
+web = [
+  "tavily-python>=0.5.0",
+]
+dev = [
+  "pytest>=8.2.0",
+  "ruff>=0.4.4",
+]
+
+[project.scripts]
+webpilot = "webpilot.cli:cli"
+webpilot-mcp = "webpilot.mcp_server:main"
+
+[tool.setuptools.packages.find]
+include = ["webpilot*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"

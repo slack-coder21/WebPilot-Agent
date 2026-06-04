@@ -1,0 +1,5 @@
+task: "在 GitHub 搜索 LangGraph examples，返回前 5 个仓库标题和链接"
+site: github
+limit: 5
+planner: rule
+

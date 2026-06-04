@@ -1,0 +1,5 @@
+task: "在 Papers with Code 搜索 object detection，返回前 5 个论文标题和链接"
+site: paperswithcode
+limit: 5
+planner: rule
+

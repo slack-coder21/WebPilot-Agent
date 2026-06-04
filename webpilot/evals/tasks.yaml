@@ -1,0 +1,28 @@
+- id: arxiv_search_001
+  site: arxiv
+  task: "在 arXiv 搜索 RAG evaluation，返回前 5 篇论文标题和链接"
+  min_items: 5
+  expected_fields:
+    - title
+    - url
+- id: github_search_001
+  site: github
+  task: "在 GitHub 搜索 LangGraph examples，返回前 5 个仓库标题和链接"
+  min_items: 5
+  expected_fields:
+    - title
+    - url
+- id: huggingface_search_001
+  site: huggingface
+  task: "在 HuggingFace 搜索 RAG embedding，返回前 5 个模型标题和链接"
+  min_items: 5
+  expected_fields:
+    - title
+    - url
+- id: paperswithcode_search_001
+  site: paperswithcode
+  task: "在 Papers with Code 搜索 object detection，返回前 5 个论文标题和链接"
+  min_items: 5
+  expected_fields:
+    - title
+    - url

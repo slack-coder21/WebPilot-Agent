@@ -1,0 +1,5 @@
+task: "在 HuggingFace 搜索 RAG embedding，返回前 5 个模型标题和链接"
+site: huggingface
+limit: 5
+planner: rule
+

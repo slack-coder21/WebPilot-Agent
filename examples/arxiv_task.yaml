@@ -1,0 +1,4 @@
+task: "在 arXiv 搜索 RAG evaluation，返回前 5 篇论文标题和链接"
+site: arxiv
+limit: 5
+planner: rule
