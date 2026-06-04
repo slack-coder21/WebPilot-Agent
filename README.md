@@ -1,12 +1,12 @@
 # WebPilot Agent
 
-WebPilot Agent is an AI research-agent application for technical discovery workflows. It combines browser automation, a RESTful FastAPI backend, optional OpenAI/DeepSeek planning, LangChain RAG, Chroma vector search, and a React TypeScript frontend.
+WebPilot Agent is a full-stack AI research-agent application for technical discovery workflows. It combines browser automation, FastAPI REST APIs, React TypeScript, OpenAI/DeepSeek LLM planning, Tavily web search, webpage extraction, LangChain RAG, ChromaDB vector search, plugin-style Agent Skills, and an MCP server.
 
 ## 中文简介
 
-WebPilot Agent 是一个面向技术调研场景的全栈 AI Agent 项目。它支持使用 Playwright 进行浏览器自动化调研，通过 OpenAI/DeepSeek 进行可选 LLM 规划，使用 Tavily 搜索和网页正文抽取进行外部知识摄取，并基于 LangChain + Chroma 构建 RAG 问答能力。项目还实现了插件式 Agent Skill Registry 和 MCP Server，可将搜索、抽取、索引、RAG 查询和任务产物读取暴露为外部 Agent Runtime 可调用的 tools。
+WebPilot Agent 是一个面向技术调研场景的全栈 AI Agent 项目。系统支持使用 Playwright 执行浏览器自动化调研，通过 OpenAI 或 DeepSeek 进行可选 LLM 规划，并使用 Tavily 搜索、网页正文抽取、LangChain 文本切分和 ChromaDB 构建外部知识摄取与 RAG 问答能力。项目还实现了插件式 Agent Skill Registry 和 MCP Server，可将搜索、抽取、索引、RAG 查询和任务产物读取暴露为外部 Agent Runtime 可调用的 tools。
 
-适合展示的关键词：
+核心能力：
 
 - FastAPI RESTful API
 - React + TypeScript 前端
@@ -17,16 +17,16 @@ WebPilot Agent 是一个面向技术调研场景的全栈 AI Agent 项目。它�
 - 插件式 Agent Skills
 - MCP Server / MCP tools
 
-## Resume-Oriented Architecture
+## Architecture Overview
 
 | Area | Choice | Notes |
 |---|---|---|
-| Frontend/backend connection | FastAPI REST API | React calls `/api/tasks`, `/api/rag/ingestions`, and `/api/rag/questions`. |
+| Frontend/backend connection | FastAPI REST API | React calls `/api/tasks`, `/api/search/tavily`, `/api/rag/web-ingestions`, and `/api/rag/questions`. |
 | LLM | OpenAI / DeepSeek | `LLMPlanner` uses `langchain-openai`; DeepSeek is called through an OpenAI-compatible `base_url`. |
-| RAG | LangChain | Research results are loaded as LangChain `Document` objects and retrieved before answer generation. |
-| Vector database | ChromaDB | Local persistent vector store under `vector_store/`; simple to run and demo. |
-| Frontend language | React + TypeScript | Vite app in `frontend/`, replacing the Streamlit-only MVP for a production-style UI. |
-| RESTful | Yes | Resource-style endpoints for tasks, artifacts, RAG ingestion, and RAG questions. |
+| RAG | LangChain | Research results and extracted webpages are loaded as LangChain documents before retrieval. |
+| Vector database | ChromaDB | Local persistent vector store under `vector_store/`. |
+| Frontend language | React + TypeScript | Vite app in `frontend/`, with Chinese/English UI switching. |
+| RESTful API | Yes | Resource-style endpoints for tasks, search, extraction, ingestion, artifacts, and RAG questions. |
 | Skills | Plugin-style Skill Registry | Browser research, Tavily search, webpage extraction, RAG Q&A, indexing, and artifact retrieval are registered as reusable skills. |
 | MCP | MCP Server | `webpilot.mcp_server` exposes WebPilot skills as MCP tools. |
 
@@ -34,17 +34,17 @@ WebPilot Agent 是一个面向技术调研场景的全栈 AI Agent 项目。它�
 
 - Browser automation with Playwright.
 - Structured page observations and constrained browser actions.
-- Rule-based planner for deterministic demos.
+- Rule-based planner for deterministic execution.
 - Optional LLM planner with OpenAI or DeepSeek.
 - Site extractors for arXiv, GitHub, HuggingFace, and HuggingFace Papers.
 - arXiv API fallback when browser extraction under-delivers.
 - FastAPI REST backend for frontend and automation clients.
-- LangChain RAG over prior research outputs.
+- Tavily web search, webpage text extraction, and Chroma web-ingestion pipeline.
+- LangChain RAG over prior research outputs and indexed webpages.
 - Chroma vector store for persistent local retrieval.
-- React TypeScript dashboard for task execution, result review, indexing, and RAG Q&A.
+- React TypeScript dashboard for task execution, result review, web ingestion, indexing, and RAG Q&A.
 - Plugin-style Agent Skill Registry shared by REST and MCP entrypoints.
 - MCP server for external Agent runtimes.
-- Tavily web search, webpage text extraction, and Chroma web-ingestion pipeline.
 
 ## Install
 
@@ -90,13 +90,15 @@ WEBPILOT_EMBEDDING_MODEL=text-embedding-3-small
 
 `.env` is ignored by Git, so API keys stay local.
 
-For true semantic embeddings, set:
+For semantic embeddings, set:
 
 ```env
 WEBPILOT_EMBEDDINGS_PROVIDER=openai
 OPENAI_API_KEY=...
 WEBPILOT_EMBEDDING_MODEL=text-embedding-3-small
 ```
+
+If no embedding provider is configured, the project uses a deterministic local hash embedding backend for local demos.
 
 ## Run
 
@@ -288,8 +290,9 @@ frontend/
   src/App.tsx       # React TypeScript dashboard
 tests/              # unit tests
 examples/           # sample tasks
+docs/architecture.md
 ```
 
-## Resume Bullet
+## Project Summary
 
-Designed and upgraded WebPilot Agent, a full-stack AI research-agent application using FastAPI REST APIs, React TypeScript, Playwright browser automation, OpenAI/DeepSeek LLM planning, Tavily web search, webpage extraction, LangChain RAG, ChromaDB vector search, plugin-style Agent Skills, and an MCP server; implemented structured task execution, external web ingestion, traceable research outputs, local vector indexing, retrieval-augmented Q&A, and MCP tool exposure for external Agent runtimes.
+WebPilot Agent provides an end-to-end AI research workflow: browser-based technical research, external web search and ingestion, structured extraction, vector indexing, retrieval-augmented Q&A, traceable artifacts, reusable Agent Skills, and MCP tool exposure for external Agent runtimes.
