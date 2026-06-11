@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field, HttpUrl
 
 ActionType = Literal["goto", "click", "type", "select", "scroll", "wait", "extract", "finish"]
 PathLike = str
+AsyncTaskStatus = Literal["queued", "running", "completed", "failed"]
 
 
 class InteractiveElement(BaseModel):
@@ -43,6 +44,8 @@ class TaskTraceEvent(BaseModel):
     action: BrowserAction
     observation_url: str
     note: str = ""
+    status: Literal["ok", "error", "fallback"] = "ok"
+    duration_ms: int | None = None
 
 
 class WorkflowResult(BaseModel):
@@ -51,3 +54,18 @@ class WorkflowResult(BaseModel):
     trace_path: PathLike
     results_path: PathLike
     report_path: PathLike
+
+
+class AsyncTaskCreated(BaseModel):
+    run_id: str
+    status: AsyncTaskStatus
+    events_url: str
+    status_url: str
+
+
+class AsyncTaskState(BaseModel):
+    run_id: str
+    status: AsyncTaskStatus
+    trace: list[TaskTraceEvent] = Field(default_factory=list)
+    result: WorkflowResult | None = None
+    error: str | None = None

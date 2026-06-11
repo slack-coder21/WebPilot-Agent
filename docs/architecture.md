@@ -1,4 +1,4 @@
-# WebPilot Agent Architecture
+﻿# WebPilot Agent Architecture
 
 ## 1. Frontend And Backend Connection
 
@@ -6,7 +6,7 @@ The project uses a separated frontend/backend architecture:
 
 - Backend: FastAPI, entrypoint `webpilot/api.py`
 - Frontend: React + TypeScript + Vite, entrypoint `frontend/src/App.tsx`
-- Connection: the frontend calls REST APIs through `fetch`
+- Connection: the frontend calls REST APIs through `fetch` and subscribes to live task events through `EventSource`
 - Local proxy: `frontend/vite.config.ts` proxies `/api` to `http://127.0.0.1:8000`
 
 Core endpoints:
@@ -17,6 +17,10 @@ Core endpoints:
 - `POST /api/search/tavily`
 - `POST /api/web/extract`
 - `POST /api/tasks`
+- `POST /api/tasks/async`
+- `GET /api/tasks/{run_id}/status`
+- `GET /api/tasks/{run_id}/events`
+- `GET /api/tasks/{task_id}/trace`
 - `GET /api/tasks/{task_id}/artifacts/{artifact_name}`
 - `POST /api/rag/ingestions`
 - `POST /api/rag/web-ingestions`
@@ -43,7 +47,26 @@ DeepSeek is configured through `.env`:
 
 DeepSeek is integrated through an OpenAI-compatible API via `ChatOpenAI`. The project uses `python-dotenv` to load `.env` automatically and keeps secrets out of source control.
 
-## 3. RAG
+## 3. Agent Workflow
+
+The browser research runtime is organized as a LangGraph `StateGraph`:
+
+- State schema: `webpilot/agents/state.py`
+- Graph implementation: `webpilot/agents/graph.py`
+- Compatibility entrypoint: `webpilot/workflows/research.py`
+
+Graph nodes:
+
+- `plan`: ask the rule planner or LLM planner for the next constrained browser action.
+- `act`: execute browser actions through Playwright and update page observation.
+- `extract`: run the site-specific extractor and collect structured research items.
+- `fallback`: use the arXiv API fallback when browser extraction under-delivers.
+- `verify`: validate result count and required fields.
+- `persist`: write `trace.json`, `results.json`, and `report.md`.
+
+Conditional edges route from `plan` to `act`, `extract`, `fallback`, or `verify`, and route failed or under-filled extraction through fallback before final verification. Each emitted `TaskTraceEvent` is also sent to the async task runtime so the frontend can stream the trace with SSE.
+
+## 4. RAG
 
 The RAG layer is built with LangChain and ChromaDB:
 
@@ -68,7 +91,7 @@ External web ingestion flow:
 4. Chunks are written into Chroma
 5. RAG Q&A retrieves indexed webpage context
 
-## 4. Vector Database
+## 5. Vector Database
 
 The project uses ChromaDB:
 
@@ -82,7 +105,7 @@ The default embedding backend is a deterministic local hash embedding provider, 
 - `WEBPILOT_EMBEDDING_MODEL=text-embedding-3-small`
 - `OPENAI_API_KEY`
 
-## 5. Frontend
+## 6. Frontend
 
 The frontend uses React + TypeScript:
 
@@ -94,13 +117,14 @@ Main UI sections:
 
 - Agent task configuration
 - Structured result display
+- Live execution trace and run status
 - External search and semantic indexing
 - Chroma indexing
 - RAG console
 - OpenAI/DeepSeek provider switching
 - Planner and model selection
 
-## 6. Skills And MCP
+## 7. Skills And MCP
 
 The project uses a plugin-style Skill Registry:
 
@@ -137,11 +161,15 @@ MCP:
 
 These MCP tools can be called by MCP-compatible external Agent runtimes.
 
-## 7. RESTful API
+## 8. RESTful API
 
 The FastAPI backend exposes RESTful resources:
 
-- `/api/tasks` for research tasks
+- `/api/tasks` for synchronous research tasks
+- `/api/tasks/async` for background research tasks
+- `/api/tasks/{run_id}/status` for background task state
+- `/api/tasks/{run_id}/events` for SSE trace streaming
+- `/api/tasks/{task_id}/trace` for structured trace artifacts
 - `/api/tasks/{task_id}/artifacts/{artifact_name}` for task artifacts
 - `/api/search/tavily` for external search
 - `/api/web/extract` for webpage extraction

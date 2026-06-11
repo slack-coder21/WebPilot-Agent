@@ -1,12 +1,17 @@
+import json
+from asyncio import sleep
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
-from webpilot.models import WorkflowResult
+from webpilot.models import AsyncTaskCreated, AsyncTaskState, TaskTraceEvent, WorkflowResult
 from webpilot.rag import RagAnswer
+from webpilot.sites import SUPPORTED_SITES
 from webpilot.skills import get_skill_registry
 from webpilot.skills.builtins import find_run_dir
+from webpilot.task_runtime import task_runtime
 
 
 class TaskCreateRequest(BaseModel):
@@ -103,6 +108,64 @@ def create_task(request: TaskCreateRequest) -> WorkflowResult:
         raise HTTPException(status_code=502, detail=f"Task execution failed: {exc}") from exc
 
 
+@app.post("/api/tasks/async", response_model=AsyncTaskCreated)
+def create_async_task(request: TaskCreateRequest) -> AsyncTaskCreated:
+    _validate_task_request(request)
+    state = task_runtime.create(request.model_dump())
+    return AsyncTaskCreated(
+        run_id=state.run_id,
+        status=state.status,
+        events_url=f"/api/tasks/{state.run_id}/events",
+        status_url=f"/api/tasks/{state.run_id}/status",
+    )
+
+
+@app.get("/api/tasks/{run_id}/status", response_model=AsyncTaskState)
+def get_async_task_status(run_id: str) -> AsyncTaskState:
+    try:
+        return task_runtime.get(run_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Task run not found") from exc
+
+
+@app.get("/api/tasks/{run_id}/events")
+async def stream_async_task_events(run_id: str) -> StreamingResponse:
+    try:
+        task_runtime.get(run_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Task run not found") from exc
+
+    async def event_stream():
+        last_index = 0
+        last_status = None
+        while True:
+            try:
+                state = task_runtime.get(run_id)
+            except KeyError:
+                yield _sse("error", json.dumps({"error": "Task run not found"}))
+                break
+
+            if state.status != last_status:
+                yield _sse("status", state.model_dump_json())
+                last_status = state.status
+
+            for event in state.trace[last_index:]:
+                yield _sse("trace", event.model_dump_json())
+            last_index = len(state.trace)
+
+            if state.status in {"completed", "failed"}:
+                yield _sse(state.status, state.model_dump_json())
+                break
+
+            await sleep(0.5)
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
 @app.get("/api/tasks/{task_id}/artifacts/{artifact_name}")
 def get_task_artifact(task_id: str, artifact_name: str):
     if artifact_name not in {"trace.json", "results.json", "report.md"}:
@@ -116,6 +179,24 @@ def get_task_artifact(task_id: str, artifact_name: str):
     if not artifact_path.exists():
         raise HTTPException(status_code=404, detail="Artifact not found")
     return FileResponse(artifact_path)
+
+
+@app.get("/api/tasks/{task_id}/trace", response_model=list[TaskTraceEvent])
+def get_task_trace(task_id: str) -> list[TaskTraceEvent]:
+    try:
+        run_dir = find_run_dir(task_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    trace_path = run_dir / "trace.json"
+    if not trace_path.exists():
+        raise HTTPException(status_code=404, detail="Trace artifact not found")
+
+    try:
+        payload = json.loads(trace_path.read_text(encoding="utf-8"))
+        return [TaskTraceEvent.model_validate(event) for event in payload]
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=500, detail="Trace artifact is not valid JSON") from exc
 
 
 @app.post("/api/rag/ingestions", response_model=IngestResponse)
@@ -168,3 +249,16 @@ def ask_rag(request: RagQuestionRequest) -> RagAnswer:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"RAG query failed: {exc}") from exc
+
+
+def _validate_task_request(request: TaskCreateRequest) -> None:
+    if request.site not in SUPPORTED_SITES:
+        raise HTTPException(status_code=400, detail=f"Unsupported site: {request.site}")
+    if request.planner not in {"rule", "llm"}:
+        raise HTTPException(status_code=400, detail="planner must be 'rule' or 'llm'")
+    if request.llm_provider not in {"openai", "deepseek"}:
+        raise HTTPException(status_code=400, detail="llm_provider must be 'openai' or 'deepseek'")
+
+
+def _sse(event: str, data: str) -> str:
+    return f"event: {event}\ndata: {data}\n\n"

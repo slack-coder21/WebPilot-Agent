@@ -1,50 +1,43 @@
-# WebPilot Agent
+﻿# WebPilot Agent
 
-WebPilot Agent is a full-stack AI research-agent application for technical discovery workflows. It combines browser automation, FastAPI REST APIs, React TypeScript, OpenAI/DeepSeek LLM planning, Tavily web search, webpage extraction, LangChain RAG, ChromaDB vector search, plugin-style Agent Skills, and an MCP server.
+WebPilot Agent is a full-stack AI research-agent application for technical discovery workflows. It combines FastAPI, React TypeScript, Playwright browser automation, OpenAI/DeepSeek LLM planning, Tavily web search, LangChain RAG, ChromaDB vector search, plugin-style Agent Skills, traceable task artifacts, and an MCP server.
 
 ## 中文简介
 
-WebPilot Agent 是一个面向技术调研场景的全栈 AI Agent 项目。系统支持使用 Playwright 执行浏览器自动化调研，通过 OpenAI 或 DeepSeek 进行可选 LLM 规划，并使用 Tavily 搜索、网页正文抽取、LangChain 文本切分和 ChromaDB 构建外部知识摄取与 RAG 问答能力。项目还实现了插件式 Agent Skill Registry 和 MCP Server，可将搜索、抽取、索引、RAG 查询和任务产物读取暴露为外部 Agent Runtime 可调用的 tools。
+WebPilot Agent 是一个面向技术调研场景的全栈 AI Agent 工程项目。系统支持创建调研任务、自动访问目标站点、抽取结构化结果、写入本地知识库、进行 RAG 问答，并把 Planner 决策、浏览器动作、fallback 和质量检查记录为可追踪的执行轨迹。
 
-核心能力：
+项目重点不是简单调用大模型，而是展示 Agent 工程中的编排、工具调用、状态记录、RAG、MCP 工具暴露、可观测性和前后端闭环。
 
-- FastAPI RESTful API
-- React + TypeScript 前端
-- Playwright 浏览器自动化 Agent
-- OpenAI / DeepSeek LLM Planner
-- Tavily Search + 网页正文抽取
-- LangChain RAG + ChromaDB
-- 插件式 Agent Skills
-- MCP Server / MCP tools
+## Core Capabilities
+
+- Browser automation with Playwright.
+- Rule-based planner and optional OpenAI/DeepSeek LLM planner.
+- LangGraph `StateGraph` workflow for planner, browser, extraction, fallback, verification, and persistence nodes.
+- Site extractors for arXiv, GitHub, HuggingFace, and Papers with Code.
+- arXiv API fallback when browser extraction under-delivers.
+- FastAPI REST backend for task execution, artifacts, RAG, and web ingestion.
+- React TypeScript dashboard with Chinese/English UI switching.
+- Tavily web search, webpage extraction, chunking, and Chroma indexing.
+- LangChain RAG over previous research outputs and indexed webpages.
+- Structured execution trace for each task step, action, status, note, and latency.
+- Background task execution with SSE streaming for live Agent trace updates.
+- Plugin-style Agent Skill Registry reused by REST and MCP entrypoints.
+- MCP server exposing WebPilot skills to external Agent runtimes.
 
 ## Architecture Overview
 
 | Area | Choice | Notes |
 |---|---|---|
-| Frontend/backend connection | FastAPI REST API | React calls `/api/tasks`, `/api/search/tavily`, `/api/rag/web-ingestions`, and `/api/rag/questions`. |
-| LLM | OpenAI / DeepSeek | `LLMPlanner` uses `langchain-openai`; DeepSeek is called through an OpenAI-compatible `base_url`. |
-| RAG | LangChain | Research results and extracted webpages are loaded as LangChain documents before retrieval. |
-| Vector database | ChromaDB | Local persistent vector store under `vector_store/`. |
-| Frontend language | React + TypeScript | Vite app in `frontend/`, with Chinese/English UI switching. |
-| RESTful API | Yes | Resource-style endpoints for tasks, search, extraction, ingestion, artifacts, and RAG questions. |
-| Skills | Plugin-style Skill Registry | Browser research, Tavily search, webpage extraction, RAG Q&A, indexing, and artifact retrieval are registered as reusable skills. |
-| MCP | MCP Server | `webpilot.mcp_server` exposes WebPilot skills as MCP tools. |
-
-## Capabilities
-
-- Browser automation with Playwright.
-- Structured page observations and constrained browser actions.
-- Rule-based planner for deterministic execution.
-- Optional LLM planner with OpenAI or DeepSeek.
-- Site extractors for arXiv, GitHub, HuggingFace, and HuggingFace Papers.
-- arXiv API fallback when browser extraction under-delivers.
-- FastAPI REST backend for frontend and automation clients.
-- Tavily web search, webpage text extraction, and Chroma web-ingestion pipeline.
-- LangChain RAG over prior research outputs and indexed webpages.
-- Chroma vector store for persistent local retrieval.
-- React TypeScript dashboard for task execution, result review, web ingestion, indexing, and RAG Q&A.
-- Plugin-style Agent Skill Registry shared by REST and MCP entrypoints.
-- MCP server for external Agent runtimes.
+| Frontend | React + TypeScript + Vite | Dashboard in `frontend/`. |
+| Backend | FastAPI | REST APIs in `webpilot/api.py`. |
+| Browser automation | Playwright | Page observation and constrained browser actions. |
+| Planning | Rule planner / LLM planner | OpenAI and DeepSeek are supported. |
+| Agent workflow | LangGraph `StateGraph` | Nodes for plan, act, extract, fallback, verify, and persist. |
+| RAG | LangChain | Research results and extracted webpages become documents. |
+| Vector database | ChromaDB | Local persistent store under `vector_store/`. |
+| Skills | Agent Skill Registry | Shared by FastAPI and MCP server. |
+| MCP | FastMCP | `webpilot-mcp` exposes WebPilot tools. |
+| Observability | Task trace artifacts + SSE | `trace.json`, `/api/tasks/{task_id}/trace`, and live `/api/tasks/{run_id}/events`. |
 
 ## Install
 
@@ -87,8 +80,6 @@ WEBPILOT_LLM_PROVIDER=openai
 WEBPILOT_EMBEDDINGS_PROVIDER=hash
 WEBPILOT_EMBEDDING_MODEL=text-embedding-3-small
 ```
-
-`.env` is ignored by Git, so API keys stay local.
 
 For semantic embeddings, set:
 
@@ -141,41 +132,6 @@ List registered skills:
 GET /api/skills
 ```
 
-Search the web with Tavily:
-
-```http
-POST /api/search/tavily
-Content-Type: application/json
-
-{
-  "query": "agentic RAG evaluation",
-  "max_results": 5
-}
-```
-
-Extract webpage text:
-
-```http
-POST /api/web/extract
-Content-Type: application/json
-
-{
-  "url": "https://example.com/article"
-}
-```
-
-Search, extract, split, and index web pages into Chroma:
-
-```http
-POST /api/rag/web-ingestions
-Content-Type: application/json
-
-{
-  "query": "agentic RAG evaluation",
-  "max_results": 5
-}
-```
-
 Run a research task:
 
 ```http
@@ -192,10 +148,70 @@ Content-Type: application/json
 }
 ```
 
-Index research outputs into Chroma:
+Run a research task asynchronously:
 
 ```http
-POST /api/rag/ingestions
+POST /api/tasks/async
+Content-Type: application/json
+
+{
+  "task": "Search arXiv for RAG evaluation and return the top 5 paper titles and links",
+  "site": "arxiv",
+  "limit": 5,
+  "planner": "rule",
+  "llm_provider": "openai",
+  "headless": true
+}
+```
+
+The response contains:
+
+```json
+{
+  "run_id": "2b0c3b4a0f1c4b9d8b0f7d7a4f5c1e1a",
+  "status": "queued",
+  "events_url": "/api/tasks/{run_id}/events",
+  "status_url": "/api/tasks/{run_id}/status"
+}
+```
+
+Subscribe to live Agent events:
+
+```http
+GET /api/tasks/{run_id}/events
+Accept: text/event-stream
+```
+
+Query async task status:
+
+```http
+GET /api/tasks/{run_id}/status
+```
+
+Read structured task trace:
+
+```http
+GET /api/tasks/{task_id}/trace
+```
+
+Read raw artifacts:
+
+```http
+GET /api/tasks/{task_id}/artifacts/trace.json
+GET /api/tasks/{task_id}/artifacts/results.json
+GET /api/tasks/{task_id}/artifacts/report.md
+```
+
+Search, extract, split, and index webpages into Chroma:
+
+```http
+POST /api/rag/web-ingestions
+Content-Type: application/json
+
+{
+  "query": "agentic RAG evaluation",
+  "max_results": 5
+}
 ```
 
 Ask a RAG question:
@@ -261,7 +277,7 @@ Exposed MCP tools:
 
 These tools reuse the same plugin-style skills used by the FastAPI backend.
 
-## Output
+## Task Artifacts
 
 Each run writes:
 
@@ -273,6 +289,28 @@ runs/
     report.md
 ```
 
+The trace records each step with:
+
+- `step`
+- `action`
+- `observation_url`
+- `note`
+- `status`
+- `duration_ms`
+
+## Evaluation
+
+The evaluation module can run fixed research tasks from `webpilot/evals/tasks.yaml` and report:
+
+- task completion rate
+- expected field coverage
+- execution steps
+- average latency
+- browser/tool error rate
+- fallback count
+
+Recommended next step: run the same evaluation set with both rule planner and LLM planner, then compare completion rate, average steps, error rate, and report quality.
+
 ## Project Structure
 
 ```text
@@ -280,11 +318,13 @@ webpilot/
   api.py            # FastAPI REST backend
   llm.py            # OpenAI/DeepSeek chat model factory
   mcp_server.py     # MCP tools for external Agent runtimes
+  models.py         # Pydantic request/result/trace models
   rag.py            # LangChain + Chroma RAG service
   skills/           # plugin-style Agent Skill Registry
   web/              # Tavily search, webpage extraction, web ingestion
-  agents/           # planner, extractor, verifier, reporter
+  agents/           # LangGraph state graph, planner, extractor, verifier, reporter
   browser/          # Playwright client, observations, action executor
+  evals/            # task evaluation set and runner
   workflows/        # end-to-end research workflow
 frontend/
   src/App.tsx       # React TypeScript dashboard
@@ -293,6 +333,10 @@ examples/           # sample tasks
 docs/architecture.md
 ```
 
-## Project Summary
+## Roadmap
 
-WebPilot Agent provides an end-to-end AI research workflow: browser-based technical research, external web search and ingestion, structured extraction, vector indexing, retrieval-augmented Q&A, traceable artifacts, reusable Agent Skills, and MCP tool exposure for external Agent runtimes.
+- Add LangGraph checkpointing and resumable task state.
+- Add human-in-the-loop approval for risky browser actions.
+- Expand the evaluation set to 20-30 technical research tasks.
+- Add stronger RAG evaluation, citation coverage, and reranking.
+- Add Docker Compose for one-command local deployment.

@@ -6,6 +6,7 @@ __pycache__/
 .idea/
 *.egg-info/
 runs/
+logs/
 vector_store/
 frontend/node_modules/
 frontend/dist/

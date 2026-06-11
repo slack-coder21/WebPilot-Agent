@@ -1,4 +1,4 @@
-LANGUAGE_LABELS = {
+﻿LANGUAGE_LABELS = {
     "zh": "中文",
     "en": "English",
 }
@@ -99,7 +99,7 @@ EXAMPLE_TASKS = {
         "arxiv": "在 arXiv 搜索 RAG evaluation，返回前 5 篇论文标题和链接",
         "github": "在 GitHub 搜索 LangGraph examples，返回前 5 个仓库标题和链接",
         "huggingface": "在 HuggingFace 搜索 RAG embedding，返回前 5 个模型标题和链接",
-        "paperswithcode": "在 Papers with Code 搜索 object detection，返回前 5 个论文标题和链接",
+        "paperswithcode": "在 Papers with Code 搜索 object detection，返回前 5 篇论文标题和链接",
     },
     "en": {
         "arxiv": "Search arXiv for RAG evaluation and return the top 5 paper titles and links",

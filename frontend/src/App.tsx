@@ -1,13 +1,17 @@
-import {
+﻿import {
+  Activity,
   Brain,
+  CheckCircle2,
+  Clock3,
   Database,
   FileSearch,
   Globe2,
   Play,
   RefreshCw,
   Search,
+  XCircle,
 } from "lucide-react";
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import "./styles.css";
 
 type Language = "zh" | "en";
@@ -20,12 +24,45 @@ type ResearchItem = {
   source?: string;
 };
 
+type BrowserAction = {
+  action: string;
+  target_id?: string | null;
+  value?: string | null;
+  url?: string | null;
+};
+
+type TaskTraceEvent = {
+  step: number;
+  action: BrowserAction;
+  observation_url: string;
+  note?: string;
+  status?: "ok" | "error" | "fallback";
+  duration_ms?: number | null;
+};
+
 type WorkflowResult = {
   task_id: string;
   items: ResearchItem[];
   trace_path: string;
   results_path: string;
   report_path: string;
+};
+
+type AsyncTaskCreated = {
+  run_id: string;
+  status: TaskRunStatus;
+  events_url: string;
+  status_url: string;
+};
+
+type TaskRunStatus = "queued" | "running" | "completed" | "failed";
+
+type AsyncTaskState = {
+  run_id: string;
+  status: TaskRunStatus;
+  trace: TaskTraceEvent[];
+  result?: WorkflowResult | null;
+  error?: string | null;
 };
 
 type RagAnswer = {
@@ -48,18 +85,20 @@ const sites = ["arxiv", "github", "huggingface", "paperswithcode"];
 
 const text = {
   zh: {
-    stack: "FastAPI · LangChain · Chroma · React · MCP",
+    stack: "FastAPI / LangChain / Chroma / React / MCP",
     vectorStore: "Chroma 向量知识库",
     researchTask: "调研任务",
     task: "任务描述",
     site: "检索站点",
     limit: "返回数量",
-    planner: "Planner",
-    provider: "LLM 服务商",
+    planner: "规划器",
+    provider: "模型服务商",
     model: "模型选择",
     run: "运行 Agent",
     results: "结构化结果",
-    emptyResults: "运行一个任务后，这里会展示浏览器调研结果。",
+    trace: "执行轨迹",
+    emptyResults: "运行任务后，这里会展示浏览器调研结果。",
+    emptyTrace: "任务完成后，这里会展示规划器与工具调用轨迹。",
     items: "条结果",
     fallbackResult: "调研结果",
     webIngest: "外部搜索与语义索引",
@@ -75,19 +114,22 @@ const text = {
     ask: "提问",
     translate: "English",
     taskFailed: "任务运行失败",
+    traceFailed: "执行轨迹读取失败",
     ingestOk: "已将 {count} 条调研文档写入 Chroma 向量库。",
     webIngestFailed: "外部搜索索引失败",
     ingestFailed: "索引构建失败",
     ragFailed: "RAG 问答失败",
     defaultModel: "使用默认模型",
     rulePlanner: "规则模式",
-    llmPlanner: "LLM 模式",
+    llmPlanner: "大模型模式",
     defaultTask: "在 arXiv 搜索 RAG evaluation，返回前 5 篇论文标题和链接",
     defaultWebQuery: "agentic RAG evaluation benchmark",
     defaultQuestion: "哪些已检索论文最适合用于 RAG evaluation？",
+    source: "来源",
+    duration: "耗时",
   },
   en: {
-    stack: "FastAPI · LangChain · Chroma · React · MCP",
+    stack: "FastAPI / LangChain / Chroma / React / MCP",
     vectorStore: "Chroma Vector Store",
     researchTask: "Research Task",
     task: "Task",
@@ -98,7 +140,9 @@ const text = {
     model: "Model",
     run: "Run Agent",
     results: "Structured Results",
+    trace: "Execution Trace",
     emptyResults: "Run a task to collect browser research results.",
+    emptyTrace: "Run a task to inspect planner and tool-call steps.",
     items: "items",
     fallbackResult: "Research result",
     webIngest: "External Search & Semantic Indexing",
@@ -114,6 +158,7 @@ const text = {
     ask: "Ask",
     translate: "中文",
     taskFailed: "Task failed",
+    traceFailed: "Trace load failed",
     ingestOk: "Indexed {count} research documents into Chroma.",
     webIngestFailed: "Web ingestion failed",
     ingestFailed: "Ingestion failed",
@@ -124,6 +169,8 @@ const text = {
     defaultTask: "Search arXiv for RAG evaluation and return the top 5 paper titles and links",
     defaultWebQuery: "agentic RAG evaluation benchmark",
     defaultQuestion: "Which retrieved papers are most relevant for RAG evaluation?",
+    source: "Source",
+    duration: "Duration",
   },
 };
 
@@ -161,6 +208,7 @@ const modelOptions: Record<string, Array<{ label: string; value: string }>> = {
 
 export default function App() {
   const [language, setLanguage] = useState<Language>("zh");
+  const eventSourceRef = useRef<EventSource | null>(null);
   const t = text[language];
   const [task, setTask] = useState(text.zh.defaultTask);
   const [site, setSite] = useState("arxiv");
@@ -169,12 +217,27 @@ export default function App() {
   const [provider, setProvider] = useState("deepseek");
   const [model, setModel] = useState("");
   const [busy, setBusy] = useState(false);
+  const [runId, setRunId] = useState("");
+  const [runStatus, setRunStatus] = useState<TaskRunStatus | "idle">("idle");
   const [result, setResult] = useState<WorkflowResult | null>(null);
+  const [trace, setTrace] = useState<TaskTraceEvent[]>([]);
   const [webQuery, setWebQuery] = useState(text.zh.defaultWebQuery);
   const [webResult, setWebResult] = useState<WebIngestResult | null>(null);
   const [ragQuestion, setRagQuestion] = useState(text.zh.defaultQuestion);
   const [ragAnswer, setRagAnswer] = useState<RagAnswer | null>(null);
-  const [notice, setNotice] = useState("");
+  const [taskNotice, setTaskNotice] = useState("");
+  const [webNotice, setWebNotice] = useState("");
+  const [ragNotice, setRagNotice] = useState("");
+
+  useEffect(() => {
+    const previousScrollRestoration = window.history.scrollRestoration;
+    window.history.scrollRestoration = "manual";
+    window.scrollTo({ top: 0, left: 0 });
+
+    return () => {
+      window.history.scrollRestoration = previousScrollRestoration;
+    };
+  }, []);
 
   function toggleLanguage() {
     const nextLanguage: Language = language === "zh" ? "en" : "zh";
@@ -188,10 +251,16 @@ export default function App() {
 
   async function runTask(event: FormEvent) {
     event.preventDefault();
+    window.scrollTo({ top: 0, left: 0 });
+    closeEventSource();
     setBusy(true);
-    setNotice("");
+    setTaskNotice("");
+    setResult(null);
+    setTrace([]);
+    setRunId("");
+    setRunStatus("queued");
     try {
-      const response = await fetch("/api/tasks", {
+      const response = await fetch("/api/tasks/async", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -205,18 +274,73 @@ export default function App() {
         }),
       });
       if (!response.ok) throw new Error(await response.text());
-      setResult(await response.json());
+      const payload: AsyncTaskCreated = await response.json();
+      setRunId(payload.run_id);
+      setRunStatus(payload.status);
+      subscribeToTask(payload.events_url);
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : t.taskFailed);
-    } finally {
+      setTaskNotice(errorMessage(error, t.taskFailed));
+      setRunStatus("failed");
       setBusy(false);
     }
+  }
+
+  function subscribeToTask(eventsUrl: string) {
+    const source = new EventSource(eventsUrl);
+    eventSourceRef.current = source;
+
+    source.addEventListener("status", (event) => {
+      const state = parseEventData<AsyncTaskState>(event);
+      setRunStatus(state.status);
+    });
+
+    source.addEventListener("trace", (event) => {
+      const nextEvent = parseEventData<TaskTraceEvent>(event);
+      setTrace((current) => [...current, nextEvent]);
+    });
+
+    source.addEventListener("completed", (event) => {
+      const state = parseEventData<AsyncTaskState>(event);
+      setRunStatus("completed");
+      setTrace(state.trace);
+      if (state.result) setResult(state.result);
+      setBusy(false);
+      closeEventSource();
+    });
+
+    source.addEventListener("failed", (event) => {
+      const state = parseEventData<AsyncTaskState>(event);
+      setRunStatus("failed");
+      setTrace(state.trace);
+      setTaskNotice(state.error || t.taskFailed);
+      setBusy(false);
+      closeEventSource();
+    });
+
+    source.onerror = () => {
+      if (eventSourceRef.current !== source) return;
+      setTaskNotice(t.traceFailed);
+      setRunStatus("failed");
+      setBusy(false);
+      closeEventSource();
+    };
+  }
+
+  function closeEventSource() {
+    if (eventSourceRef.current) {
+      eventSourceRef.current.close();
+      eventSourceRef.current = null;
+    }
+  }
+
+  function parseEventData<T>(event: MessageEvent): T {
+    return JSON.parse(event.data) as T;
   }
 
   async function ingestWeb(event: FormEvent) {
     event.preventDefault();
     setBusy(true);
-    setNotice("");
+    setWebNotice("");
     try {
       const response = await fetch("/api/rag/web-ingestions", {
         method: "POST",
@@ -231,7 +355,7 @@ export default function App() {
       if (!response.ok) throw new Error(await response.text());
       setWebResult(await response.json());
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : t.webIngestFailed);
+      setWebNotice(errorMessage(error, t.webIngestFailed));
     } finally {
       setBusy(false);
     }
@@ -239,14 +363,14 @@ export default function App() {
 
   async function ingestRuns() {
     setBusy(true);
-    setNotice("");
+    setRagNotice("");
     try {
       const response = await fetch("/api/rag/ingestions", { method: "POST" });
       if (!response.ok) throw new Error(await response.text());
       const payload = await response.json();
-      setNotice(t.ingestOk.replace("{count}", String(payload.documents)));
+      setRagNotice(t.ingestOk.replace("{count}", String(payload.documents)));
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : t.ingestFailed);
+      setRagNotice(errorMessage(error, t.ingestFailed));
     } finally {
       setBusy(false);
     }
@@ -255,7 +379,7 @@ export default function App() {
   async function askRag(event: FormEvent) {
     event.preventDefault();
     setBusy(true);
-    setNotice("");
+    setRagNotice("");
     try {
       const response = await fetch("/api/rag/questions", {
         method: "POST",
@@ -271,7 +395,7 @@ export default function App() {
       if (!response.ok) throw new Error(await response.text());
       setRagAnswer(await response.json());
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : t.ragFailed);
+      setRagNotice(errorMessage(error, t.ragFailed));
     } finally {
       setBusy(false);
     }
@@ -373,7 +497,13 @@ export default function App() {
               <Search size={20} />
               <h2>{t.results}</h2>
             </div>
-            {notice && <div className="notice">{notice}</div>}
+            {taskNotice && <div className="notice">{taskNotice}</div>}
+            {runStatus !== "idle" && (
+              <div className={`run-status ${runStatus}`}>
+                <span>{runStatus}</span>
+                {runId && <code>{runId.slice(0, 12)}</code>}
+              </div>
+            )}
             {!result && <p className="empty">{t.emptyResults}</p>}
             {result && (
               <>
@@ -395,6 +525,44 @@ export default function App() {
                 </div>
               </>
             )}
+
+            <div className="trace-header">
+              <div className="panel-title inline-title">
+                <Activity size={20} />
+                <h2>{t.trace}</h2>
+              </div>
+              {trace.length > 0 && (
+                <span className="trace-count">
+                  {trace.length} {language === "zh" ? "步" : "steps"}
+                </span>
+              )}
+            </div>
+            {trace.length === 0 && <p className="empty">{t.emptyTrace}</p>}
+            {trace.length > 0 && (
+              <div className="trace-list">
+                {trace.map((event) => (
+                  <article className={`trace-card ${event.status ?? "ok"}`} key={event.step}>
+                    <div className="trace-step">
+                      <span className="step-index">{event.step}</span>
+                      <span className="action-name">{event.action.action}</span>
+                      <TraceStatusIcon status={event.status} />
+                    </div>
+                    <div className="trace-body">
+                      <p>{event.note || event.action.value || event.action.url || t.source}</p>
+                      <div className="trace-meta">
+                        <span>{event.observation_url}</span>
+                        {event.duration_ms !== undefined && event.duration_ms !== null && (
+                          <span>
+                            <Clock3 size={14} />
+                            {t.duration}: {event.duration_ms}ms
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            )}
           </section>
         </div>
 
@@ -403,6 +571,7 @@ export default function App() {
             <Globe2 size={20} />
             <h2>{t.webIngest}</h2>
           </div>
+          {webNotice && <div className="notice">{webNotice}</div>}
           <form onSubmit={ingestWeb} className="rag-form">
             <input
               aria-label={t.webQuery}
@@ -447,6 +616,7 @@ export default function App() {
             <Brain size={20} />
             <h2>{t.rag}</h2>
           </div>
+          {ragNotice && <div className="notice">{ragNotice}</div>}
           <button className="secondary" onClick={ingestRuns} disabled={busy}>
             <Database size={18} />
             {t.ingest}
@@ -474,4 +644,25 @@ export default function App() {
       </section>
     </main>
   );
+}
+
+function errorMessage(error: unknown, fallback: string) {
+  if (!(error instanceof Error)) return fallback;
+  if (!error.message) return fallback;
+
+  try {
+    const payload = JSON.parse(error.message) as { detail?: unknown };
+    if (typeof payload.detail === "string") return payload.detail;
+    if (payload.detail) return JSON.stringify(payload.detail);
+  } catch {
+    // Keep the original message when the response is plain text.
+  }
+
+  return error.message;
+}
+
+function TraceStatusIcon({ status = "ok" }: { status?: TaskTraceEvent["status"] }) {
+  if (status === "error") return <XCircle className="status-icon error" size={18} />;
+  if (status === "fallback") return <RefreshCw className="status-icon fallback" size={18} />;
+  return <CheckCircle2 className="status-icon ok" size={18} />;
 }
